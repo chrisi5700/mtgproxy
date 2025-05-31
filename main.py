@@ -60,7 +60,7 @@ def load_decklist(path: str | Path) -> dict[str, int]:
         line = raw.strip()
 
         # 1. Ignore comment or header lines
-        if not line or line.startswith("//"):
+        if not line or line.startswith("//") or line.startswith('#'):
             continue
 
         # 2. Handle sideboard lines (strip `SB:` prefix)
