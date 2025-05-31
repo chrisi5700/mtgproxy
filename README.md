@@ -111,9 +111,18 @@ nykthos, shrine to nyx: 3
 4 Brutal Cathar // Moonrage Brute
 3 Wear // Tear
 2 Primordial Hydra
+4 Unholy Annex/Ritual Chamber
 2 Thrun, the Last Troll
 21 Forest
 3 Nykthos, Shrine to Nyx
+
+// Sideboard:
+
+SB: 2 Ghost Vacuum
+SB: 2 Obstinate Baloth
+SB: 2 The Stone Brain
+SB: 1 Aclazotz, Deepest Betrayal
+SB: 1 Anoint with Affliction
 ```
 
 *Comments* (starting with `#` or `//`) and blank lines are ignored by the parser.
@@ -131,24 +140,10 @@ nykthos, shrine to nyx: 3
 
 ---
 
-## Script entry‑point
 
-```python
-if __name__ == "__main__":
-    print("Loading Deck…")
-    deck = load_deck(sys.argv[1])
+## Future Plans
 
-    print("Downloading Cards…")
-    downloader = Downloader(deck)
-    downloaded = downloader.download_all()
-
-    print("Generating Layout…")
-    layout = Layout(downloaded)
-    layout.generate_pages()
-
-    print("Writing PDF…")
-    layout.save_pdf(sys.argv[2])
-```
+Maybe adding automatic printing and better CLI ergonomics. Maybe even a full UI perchance.
 
 ---
 
