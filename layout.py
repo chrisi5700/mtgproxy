@@ -1,0 +1,69 @@
+from PIL import Image
+from PIL.Image import Resampling
+
+"""
+A4 Size: 210 mm x 297 mm
+MTG Size: 63.5 mm x 88.9 mm
+210 / 63.5 = 3.3
+297 / 88.9 = 3.3 
+
+
+
+MTG Original Pixels: 745 × 1040
+
+
+A4 Pixels: 595 x 842
+MTG Correct Pixels: 179.91 x 252.03
+"""
+
+class Layout:
+    MM_PER_INCH = 25.4
+    DPI = 300
+    CARD_W_MM, CARD_H_MM = 63.5, 88.9  # official MTG dimensions
+    A4_W_MM, A4_H_MM = 210, 297
+
+    MTG_W = int(CARD_W_MM / MM_PER_INCH * DPI)  # ≈ 751 px
+    MTG_H = int(CARD_H_MM / MM_PER_INCH * DPI)  # ≈ 1051 px
+    PAGE_W = int(A4_W_MM / MM_PER_INCH * DPI)  # ≈ 2480 px
+    PAGE_H = int(A4_H_MM / MM_PER_INCH * DPI)  # ≈ 3508 px
+
+    A4_DIMENSIONS = (PAGE_W, PAGE_H)
+    MTG_DIMENSIONS = (MTG_W, MTG_H)
+
+    def __init__(self, images: list[tuple[Image.Image, int]]):
+        self.images = images
+        self.pages = [self.create_a4()]
+
+    def create_a4(self):
+        return Image.new('RGB',
+                  Layout.A4_DIMENSIONS,
+                  (255, 255, 255))  # White
+
+    def resize_image(self, img: Image.Image):
+        return img.resize(Layout.MTG_DIMENSIONS, Resampling.LANCZOS)
+
+
+
+    def get_images(self):
+        for img, count in self.images:
+            img = self.resize_image(img)
+            for _ in range(count):
+                yield img
+
+
+    def generate_pages(self):
+        pos = [0, 0]
+        for img in self.get_images():
+            if pos[0] + Layout.MTG_W > Layout.PAGE_W: # No more space to the horizontally
+                pos[0] = 0                          # Move to the beginning
+                pos[1] += Layout.MTG_H # Add another row
+            if pos[1] + Layout.MTG_H > Layout.PAGE_H:    # No more space vertically
+                self.pages.append(self.create_a4()) # Create a new page
+                pos = [0, 0]                        # Draw on that page
+            self.pages[-1].paste(img, (pos[0], pos[1]))
+            pos[0] += Layout.MTG_W
+
+    def save_pdf(self, path="output/cards.pdf"):
+        self.pages[0].save(
+            path, "PDF", resolution=Layout.DPI, save_all=True, append_images=self.pages[1:]
+        )
