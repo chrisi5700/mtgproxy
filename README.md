@@ -33,13 +33,13 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-python make_proxies.py <input deck file> <output pdf>
+python main.py <input deck file> <output pdf>
 ```
 
 Example:
 
 ```bash
-python make_proxies.py ramp_agro.yaml proxies.pdf
+python main.py ramp_agro.yaml proxies.pdf
 ```
 
 * **First argument** – path to a deck file in YAML or decklist text format.
