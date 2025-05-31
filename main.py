@@ -11,6 +11,18 @@ from mtg import Downloader
 # (ignores leading/trailing spaces and accepts a literal "x")
 DECKLINE_RE = re.compile(r'^\s*(\d+)[xX]?\s+(.+?)\s*$')
 
+def _front_name(card_name: str) -> str:
+    """Return the front-face name for any multi-face card.
+
+    Splits on:
+      • ' // '  (modal DFC, split cards)
+      • '/'     (mtgdecks.net export e.g. Unholy Annex/Ritual Chamber)
+    """
+    for delim in ("//", "/"):
+        if delim in card_name:
+            return card_name.split(delim, 1)[0].strip()
+    return card_name.strip()
+
 # ────────────────────────────────────────────── YAML  → {card: count, …}
 def load_yaml_deck(path: str | Path) -> dict[str, int]:
     """Read a YAML deck into {card name: count}.
@@ -30,7 +42,7 @@ def load_yaml_deck(path: str | Path) -> dict[str, int]:
 
     deck: dict[str, int] = {}
     for card, value in data.items():
-        card = card.split("//", 1)[0].strip() # get only first card name
+        card = _front_name(card)
         if isinstance(value, int):
             deck[card] = value
         elif isinstance(value, dict) and "count" in value:
@@ -42,18 +54,32 @@ def load_yaml_deck(path: str | Path) -> dict[str, int]:
 
 # ────────────────────────────────────────── TEXT list  → {card: count, …}
 def load_decklist(path: str | Path) -> dict[str, int]:
-    """Parse classic '.dec' / '.txt' decklists ( '12 Burgeoning' )."""
+    """Parse classic decklists or mtgdecks.net export format."""
     deck: dict[str, int] = {}
     for raw in Path(path).read_text().splitlines():
-        # strip line-end comments starting with '#' or '//'
-        line = raw.split('#', 1)[0].split('//', 1)[0]
-        if not line.strip():
+        line = raw.strip()
+
+        # 1. Ignore comment or header lines
+        if not line or line.startswith("//"):
             continue
+
+        # 2. Handle sideboard lines (strip `SB:` prefix)
+        if line.startswith("SB:"):
+            line = line[3:].strip()
+
+        # 3. Try matching a card line: e.g., `4 Birds of Paradise`
         m = DECKLINE_RE.match(line)
         if not m:
             raise ValueError(f"Unrecognised deck line: {raw!r}")
-        cnt, name = int(m.group(1)), m.group(2).split("//", 1)[0].strip() # get only first card name
-        deck[name] = deck.get(name, 0) + cnt
+
+        count = int(m.group(1))
+        name = m.group(2).strip()
+
+        # Optional: drop the `//` in names (e.g., `Unholy Annex/Ritual Chamber`)
+        name = _front_name(name)
+
+        deck[name] = deck.get(name, 0) + count
+
     return deck
 
 
