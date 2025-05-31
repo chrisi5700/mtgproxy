@@ -1,5 +1,6 @@
 from PIL import Image
 from PIL.Image import Resampling
+from tqdm import tqdm
 
 """
 A4 Size: 210 mm x 297 mm
@@ -32,38 +33,44 @@ class Layout:
 
     def __init__(self, images: list[tuple[Image.Image, int]]):
         self.images = images
-        self.pages = [self.create_a4()]
+        self.pages = [self._create_a4()]
 
-    def create_a4(self):
+    @staticmethod
+    def _create_a4():
         return Image.new('RGB',
                   Layout.A4_DIMENSIONS,
                   (255, 255, 255))  # White
 
-    def resize_image(self, img: Image.Image):
+    @staticmethod
+    def _resize_image(img: Image.Image):
         return img.resize(Layout.MTG_DIMENSIONS, Resampling.LANCZOS)
 
 
 
-    def get_images(self):
+    def _get_images(self):
         for img, count in self.images:
-            img = self.resize_image(img)
+            img = self._resize_image(img)
             for _ in range(count):
                 yield img
 
 
-    def generate_pages(self):
+    def _generate_pages(self):
         pos = [0, 0]
-        for img in self.get_images():
+        for img in tqdm(self._get_images()):
             if pos[0] + Layout.MTG_W > Layout.PAGE_W: # No more space to the horizontally
                 pos[0] = 0                          # Move to the beginning
                 pos[1] += Layout.MTG_H # Add another row
             if pos[1] + Layout.MTG_H > Layout.PAGE_H:    # No more space vertically
-                self.pages.append(self.create_a4()) # Create a new page
+                self.pages.append(self._create_a4()) # Create a new page
                 pos = [0, 0]                        # Draw on that page
             self.pages[-1].paste(img, (pos[0], pos[1]))
             pos[0] += Layout.MTG_W
+        return self
 
-    def save_pdf(self, path="output/cards.pdf"):
+    def _save_pdf(self, path="output/cards.pdf"):
         self.pages[0].save(
             path, "PDF", resolution=Layout.DPI, save_all=True, append_images=self.pages[1:]
         )
+
+    def generate_pdf(self, path="output/cards.pdf"):
+        self._generate_pages()._save_pdf(path)

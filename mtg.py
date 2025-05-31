@@ -38,14 +38,12 @@ class Downloader:
 
     # --------------------------------------------------------- public interface
     def download_all(self) -> list[tuple[Image.Image, int]]:
-        """Returns [(PIL.Image, copies), …] ready for the Layout class."""
-        # Try the /collection endpoint first (≤75 distinct cards)
         imgs: list[tuple[Image.Image, int]] = []
-        for chunk in tqdm(_chunks(list(self.cards.items()), 75)):
+        for chunk in tqdm(chunks(list(self.cards.items()), 75)):
             data = self._post_collection([name for name, _ in chunk])
-            for card, (_, count) in zip(data, chunk):
-                img = self._get_card_image(card)
-                imgs.append((img, count))
+            for card_json, (_, count) in zip(data, chunk):
+                for face_img in self._get_card_images(card_json):
+                    imgs.append((face_img, count))
         return imgs
 
     # ----------------------------------------------------------- implementation
@@ -59,31 +57,50 @@ class Downloader:
         )
         Downloader._last_call = perf_counter()
         r.raise_for_status()
+        if r.json()['not_found']:
+            raise RuntimeError(f"Could not find these cards: {[card['name'] for card in r.json()['not_found']]}")
         return r.json()["data"]
 
-    def _get_card_image(self, card_json) -> Image.Image:
-        sid = card_json["id"]
-        cached = self._cache_path(sid)
-        if cached.exists():
-            return Image.open(cached).convert("RGB")
+    def _get_card_images(self, card_json) -> list[Image.Image]:
+        """Return every printable face (front & back) as PIL images."""
+        def _download(url: str, cache_id: str) -> Image.Image:
+            cached = self._cache_path(cache_id)
+            if cached.exists():
+                return Image.open(cached).convert("RGB")
 
-        # Locate an image URL (works for single- & multi-faced cards)
-        try:
+            self._throttle()
+            r = self.session.get(url, timeout=20)
+            Downloader._last_call = perf_counter()
+            r.raise_for_status()
+
+            img = Image.open(BytesIO(r.content)).convert("RGB")
+            img.save(cached, "PNG", optimize=True)
+            return img
+
+        images: list[Image.Image] = []
+
+        # 1️⃣ Prefer explicit faces if present (covers transform, MDFC, split, etc.)
+        if faces := card_json.get("card_faces"):
+            for idx, face in enumerate(faces):
+                if "image_uris" not in face:
+                    continue  # meld-backs, art cards …
+                url = face["image_uris"]["png"]
+                face_id = face.get("id", f"{card_json['id']}-{idx}")
+                images.append(_download(url, face_id))
+
+        # 2️⃣ Fallback to single-face object
+        elif "image_uris" in card_json:
             url = card_json["image_uris"]["png"]
-        except KeyError:
-            url = card_json["card_faces"][0]["image_uris"]["png"]
+            images.append(_download(url, card_json["id"]))
 
-        self._throttle()
-        resp = self.session.get(url, timeout=20)
-        Downloader._last_call = perf_counter()
-        resp.raise_for_status()
+        # 3️⃣ Last-resort redirect (extremely rare)
+        if not images:
+            url = f"https://api.scryfall.com/cards/{card_json['id']}?format=image"
+            images.append(_download(url, card_json["id"]))
 
-        img = Image.open(BytesIO(resp.content)).convert("RGB")
-        img.save(cached, "PNG", optimize=True)
-        return img
-
+        return images
 # ------------------- utility --------------------------------------------------
-def _chunks(seq, n):
+def chunks(seq, n):
     for i in range(0, len(seq), n):
         yield seq[i : i + n]
 
