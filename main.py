@@ -5,6 +5,7 @@ import re, yaml
 
 from layout import Layout
 from mtg import Downloader
+from config import MTGProxyConfig
 
 __version__ = "0.1.0"
 
@@ -134,6 +135,14 @@ Examples:
     )
 
     parser.add_argument(
+        "--config",
+        dest="config_file",
+        type=Path,
+        metavar="FILE",
+        help="Path to config file (searches ~/.config/mtgproxy/ and current dir if not specified)"
+    )
+
+    parser.add_argument(
         "--no-cache",
         action="store_true",
         help="Disable image caching (images will be re-downloaded each time)"
@@ -158,6 +167,15 @@ def main():
     """Main entry point for mtgproxy."""
     args = parse_arguments()
 
+    # Load configuration
+    try:
+        config = MTGProxyConfig.load(args.config_file)
+        if args.verbose and args.config_file:
+            print(f"Loaded config from: {args.config_file}")
+    except Exception as e:
+        print(f"Error loading config: {e}", file=sys.stderr)
+        sys.exit(1)
+
     # Validate input file exists
     input_path = Path(args.deck_file)
     if not input_path.exists():
@@ -165,11 +183,14 @@ def main():
         sys.exit(1)
 
     # Determine output file
+    # CLI --output-dir overrides config, otherwise use config's default_dir
+    output_dir = args.output_dir if args.output_dir != Path.cwd() else config.output.default_dir
+
     if args.output_file:
         output_path = Path(args.output_file)
     else:
-        # Default: use deck filename with .pdf extension
-        output_path = args.output_dir / input_path.stem
+        # Default: use deck filename with .pdf extension in the output directory
+        output_path = output_dir / input_path.stem
         output_path = output_path.with_suffix(".pdf")
 
     # Ensure output directory exists
@@ -200,7 +221,7 @@ def main():
 
     print("Generating Layout...")
     try:
-        layout = Layout(downloaded)
+        layout = Layout(downloaded, config=config.layout)
         layout._generate_pages()
         layout._save_pdf(output_path)
     except Exception as e:
