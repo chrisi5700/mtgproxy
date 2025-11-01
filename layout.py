@@ -22,9 +22,13 @@ class Layout:
     DPI = 300
     CARD_W_MM, CARD_H_MM = 63.5, 88.9  # official MTG dimensions
     A4_W_MM, A4_H_MM = 210, 297
+    GAP_MM = 0.25  # tiny gap between cards for cutting
+    TOP_MARGIN_MM = 5  # 0.5cm top margin for printer
 
     MTG_W = int(CARD_W_MM / MM_PER_INCH * DPI)  # ≈ 751 px
     MTG_H = int(CARD_H_MM / MM_PER_INCH * DPI)  # ≈ 1051 px
+    GAP_PX = int(GAP_MM / MM_PER_INCH * DPI)  # ≈ 6 px
+    TOP_MARGIN_PX = int(TOP_MARGIN_MM / MM_PER_INCH * DPI)  # ≈ 59 px
     PAGE_W = int(A4_W_MM / MM_PER_INCH * DPI)  # ≈ 2480 px
     PAGE_H = int(A4_H_MM / MM_PER_INCH * DPI)  # ≈ 3508 px
 
@@ -55,16 +59,16 @@ class Layout:
 
 
     def _generate_pages(self):
-        pos = [0, 0]
+        pos = [0, Layout.TOP_MARGIN_PX]
         for img in tqdm(self._get_images()):
             if pos[0] + Layout.MTG_W > Layout.PAGE_W: # No more space to the horizontally
                 pos[0] = 0                          # Move to the beginning
-                pos[1] += Layout.MTG_H # Add another row
+                pos[1] += Layout.MTG_H + Layout.GAP_PX # Add another row
             if pos[1] + Layout.MTG_H > Layout.PAGE_H:    # No more space vertically
                 self.pages.append(self._create_a4()) # Create a new page
-                pos = [0, 0]                        # Draw on that page
+                pos = [0, Layout.TOP_MARGIN_PX]     # Draw on that page with top margin
             self.pages[-1].paste(img, (pos[0], pos[1]))
-            pos[0] += Layout.MTG_W
+            pos[0] += Layout.MTG_W + Layout.GAP_PX
         return self
 
     def _save_pdf(self, path="output/cards.pdf"):

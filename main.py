@@ -1,9 +1,12 @@
 import sys
+import argparse
 from pathlib import Path
 import re, yaml
 
 from layout import Layout
 from mtg import Downloader
+
+__version__ = "0.1.0"
 
 # ──────────────────────────────────────────────────────────── REGEX FOR LINES
 # matches:  3 Birds of Paradise
@@ -92,13 +95,120 @@ def load_deck(path: str | Path) -> dict[str, int]:
     return load_decklist(path)
 
 
-if __name__ == "__main__":
+def parse_arguments():
+    """Parse and return command-line arguments."""
+    parser = argparse.ArgumentParser(
+        prog="mtgproxy",
+        description="Generate Magic: The Gathering proxy PDFs from deck files.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py deck.yaml proxies.pdf
+  python main.py -i deck.dec -o output.pdf --verbose
+  python main.py --input ramp.yaml --output-dir ./pdfs/
+        """.strip()
+    )
+
+    parser.add_argument(
+        "-i", "--input",
+        dest="deck_file",
+        required=True,
+        metavar="FILE",
+        help="Input deck file (YAML or decklist format)"
+    )
+
+    parser.add_argument(
+        "-o", "--output",
+        dest="output_file",
+        metavar="FILE",
+        help="Output PDF file path (default: deck_name.pdf)"
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        dest="output_dir",
+        type=Path,
+        default=Path.cwd(),
+        metavar="DIR",
+        help="Directory to save the PDF (default: current directory)"
+    )
+
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable image caching (images will be re-downloaded each time)"
+    )
+
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable verbose output"
+    )
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}"
+    )
+
+    return parser.parse_args()
+
+
+def main():
+    """Main entry point for mtgproxy."""
+    args = parse_arguments()
+
+    # Validate input file exists
+    input_path = Path(args.deck_file)
+    if not input_path.exists():
+        print(f"Error: Deck file not found: {input_path}", file=sys.stderr)
+        sys.exit(1)
+
+    # Determine output file
+    if args.output_file:
+        output_path = Path(args.output_file)
+    else:
+        # Default: use deck filename with .pdf extension
+        output_path = args.output_dir / input_path.stem
+        output_path = output_path.with_suffix(".pdf")
+
+    # Ensure output directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Pipeline
+    if args.verbose:
+        print(f"Input deck: {input_path}")
+        print(f"Output file: {output_path}")
+
     print("Loading Deck...")
-    deck = load_deck(sys.argv[1])
+    try:
+        deck = load_deck(input_path)
+    except Exception as e:
+        print(f"Error loading deck: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.verbose:
+        print(f"Loaded {len(deck)} unique cards")
+
     print("Downloading Cards...")
-    downloader = Downloader(deck)
-    downloaded = downloader.download_all()
+    try:
+        downloader = Downloader(deck)
+        downloaded = downloader.download_all()
+    except Exception as e:
+        print(f"Error downloading cards: {e}", file=sys.stderr)
+        sys.exit(1)
+
     print("Generating Layout...")
-    layout = Layout(downloaded)
-    layout._generate_pages()
-    layout._save_pdf(sys.argv[2])
+    try:
+        layout = Layout(downloaded)
+        layout._generate_pages()
+        layout._save_pdf(output_path)
+    except Exception as e:
+        print(f"Error generating PDF: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Success! PDF saved to: {output_path}")
+
+
+if __name__ == "__main__":
+    main()
