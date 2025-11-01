@@ -163,23 +163,47 @@ Examples:
     return parser.parse_args()
 
 
+def _print_header():
+    """Print a friendly header."""
+    print("\n" + "=" * 60)
+    print("  mtgproxy - Magic: The Gathering Proxy Generator")
+    print("=" * 60 + "\n")
+
+
+def _print_step(step_num: int, total_steps: int, message: str):
+    """Print a formatted step message."""
+    print(f"[{step_num}/{total_steps}] {message}")
+
+
+def _print_success(message: str):
+    """Print a success message."""
+    print(f"\n✓ {message}")
+
+
+def _print_error(message: str):
+    """Print an error message to stderr."""
+    print(f"\n✗ Error: {message}", file=sys.stderr)
+
+
 def main():
     """Main entry point for mtgproxy."""
     args = parse_arguments()
 
+    _print_header()
+
     # Load configuration
     try:
         config = MTGProxyConfig.load(args.config_file)
-        if args.verbose and args.config_file:
-            print(f"Loaded config from: {args.config_file}")
+        if args.config_file and args.verbose:
+            print(f"📋 Config: {args.config_file}\n")
     except Exception as e:
-        print(f"Error loading config: {e}", file=sys.stderr)
+        _print_error(f"Failed to load config: {e}")
         sys.exit(1)
 
     # Validate input file exists
     input_path = Path(args.deck_file)
     if not input_path.exists():
-        print(f"Error: Deck file not found: {input_path}", file=sys.stderr)
+        _print_error(f"Deck file not found: {input_path}")
         sys.exit(1)
 
     # Determine output file
@@ -196,39 +220,54 @@ def main():
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Pipeline
+    # Show file info if verbose
     if args.verbose:
-        print(f"Input deck: {input_path}")
-        print(f"Output file: {output_path}")
+        print(f"📁 Input:  {input_path}")
+        print(f"📄 Output: {output_path}\n")
 
-    print("Loading Deck...")
+    # Pipeline (4 steps total)
+    TOTAL_STEPS = 4
+
+    _print_step(1, TOTAL_STEPS, "Loading deck...")
     try:
         deck = load_deck(input_path)
     except Exception as e:
-        print(f"Error loading deck: {e}", file=sys.stderr)
+        _print_error(f"Failed to load deck: {e}")
         sys.exit(1)
 
     if args.verbose:
-        print(f"Loaded {len(deck)} unique cards")
+        print(f"   └─ {len(deck)} unique cards loaded\n")
+    else:
+        print()
 
-    print("Downloading Cards...")
+    _print_step(2, TOTAL_STEPS, "Downloading card images...")
     try:
         downloader = Downloader(deck)
         downloaded = downloader.download_all()
     except Exception as e:
-        print(f"Error downloading cards: {e}", file=sys.stderr)
+        _print_error(f"Failed to download cards: {e}")
         sys.exit(1)
 
-    print("Generating Layout...")
+    print()
+
+    _print_step(3, TOTAL_STEPS, "Generating layout...")
     try:
         layout = Layout(downloaded, config=config.layout)
         layout._generate_pages()
-        layout._save_pdf(output_path)
     except Exception as e:
-        print(f"Error generating PDF: {e}", file=sys.stderr)
+        _print_error(f"Failed to generate layout: {e}")
         sys.exit(1)
 
-    print(f"Success! PDF saved to: {output_path}")
+    print()
+
+    _print_step(4, TOTAL_STEPS, "Saving PDF...")
+    try:
+        layout._save_pdf(output_path)
+    except Exception as e:
+        _print_error(f"Failed to save PDF: {e}")
+        sys.exit(1)
+
+    _print_success(f"PDF saved to {output_path}")
 
 
 if __name__ == "__main__":
