@@ -1,13 +1,18 @@
 import sys
 import argparse
+import logging
 from pathlib import Path
 
 from layout import Layout
 from mtg import Downloader
 from config import MTGProxyConfig
 from deck_loader import load_deck
+from logging_config import setup_logging, get_logger
 
 __version__ = "0.1.0"
+
+# Initialize logging
+_logger = get_logger(__name__)
 
 
 def parse_arguments():
@@ -216,9 +221,18 @@ def main():
     """Main entry point for mtgproxy - routes to CLI or GUI."""
     args = parse_arguments()
 
+    # Set up logging based on verbosity
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    setup_logging(log_level=log_level)
+
+    _logger.info(f"mtgproxy v{__version__} started")
+    _logger.debug(f"Verbose logging enabled")
+
     if args.gui:
+        _logger.info("Launching GUI mode")
         run_gui()
     else:
+        _logger.info("Running CLI mode")
         run_cli(args)
 
 
