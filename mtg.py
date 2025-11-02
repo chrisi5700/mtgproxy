@@ -4,6 +4,7 @@ from time import perf_counter, sleep
 import json, requests, urllib.parse as up
 from PIL import Image
 from tqdm import tqdm
+from abc import ABC, abstractmethod
 
 
 
@@ -15,25 +16,66 @@ HEADERS = {
 CACHE_DIR = Path.home() / ".cache" / "mtgproxy"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-class Downloader:
+
+class BaseScryfallFetcher(ABC):
+    """Abstract base class for Scryfall API interaction with rate limiting and caching.
+
+    Handles:
+    - Rate limiting (10 requests/second max)
+    - HTTP session management
+    - Scryfall API headers
+
+    Subclasses must implement:
+    - _cache_path(): Return cache file path for a card ID
+    """
+
     RATE = 10                 # max requests / second
     MIN_DELAY = 1 / RATE
     _last_call = 0.0
 
-    def __init__(self, cards: dict[str, int]):
-        self.cards = cards
+    def __init__(self):
+        """Initialize Scryfall fetcher with rate-limited session."""
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
 
-    # ------------------------------------------------------------------ helpers
     @staticmethod
     def _throttle():
-        dt = Downloader.MIN_DELAY - (perf_counter() - Downloader._last_call)
+        """Rate limiting to respect Scryfall API limits."""
+        dt = BaseScryfallFetcher.MIN_DELAY - (perf_counter() - BaseScryfallFetcher._last_call)
         if dt > 0:
             sleep(dt)
 
     @staticmethod
-    def _cache_path(scry_id: str) -> Path:
+    def _update_last_call():
+        """Update the last call timestamp for rate limiting."""
+        BaseScryfallFetcher._last_call = perf_counter()
+
+    @abstractmethod
+    def _cache_path(self, scry_id: str) -> Path:
+        """Return the cache path for a card image. Must be implemented by subclass."""
+        pass
+
+
+class Downloader(BaseScryfallFetcher):
+    """Download card images in high-quality PNG format for PDF generation.
+
+    Features:
+    - Handles multi-face cards (DFC, split, etc.)
+    - PNG format (high quality)
+    - Bulk collection queries for efficiency
+    """
+
+    def __init__(self, cards: dict[str, int]):
+        """Initialize downloader with deck cards.
+
+        Args:
+            cards: Dictionary of {card_name: quantity}
+        """
+        super().__init__()
+        self.cards = cards
+
+    def _cache_path(self, scry_id: str) -> Path:
+        """Return PNG cache path."""
         return CACHE_DIR / f"{scry_id}.png"
 
     # --------------------------------------------------------- public interface
@@ -55,7 +97,7 @@ class Downloader:
             json={"identifiers": identifiers},
             timeout=15,
         )
-        Downloader._last_call = perf_counter()
+        self._update_last_call()
         r.raise_for_status()
         if r.json()['not_found']:
             raise RuntimeError(f"Could not find these cards: {[card['name'] for card in r.json()['not_found']]}")
@@ -70,7 +112,7 @@ class Downloader:
 
             self._throttle()
             r = self.session.get(url, timeout=20)
-            Downloader._last_call = perf_counter()
+            self._update_last_call()
             r.raise_for_status()
 
             img = Image.open(BytesIO(r.content)).convert("RGB")
@@ -105,33 +147,25 @@ def chunks(seq, n):
         yield seq[i : i + n]
 
 
-class GUIImageFetcher:
-    """Fetches card images in 'normal' format (488x680 jpeg) for GUI display.
+class GUIImageFetcher(BaseScryfallFetcher):
+    """Fetches card images in multiple formats for GUI display.
 
-    This uses a separate cache from the PNG images to avoid duplication.
-    Normal format is lower quality but smaller, suitable for preview in the GUI.
+    Features:
+    - Uses JPEG format (smaller than PNG for GUI preview)
+    - Falls back: normal (488x680) → small (146x204) → border_crop
+    - Separate cache from PDF images to avoid duplication
     """
 
     GUI_CACHE_DIR = Path.home() / ".cache" / "mtgproxy" / "gui_images"
-    RATE = 10  # max requests / second
-    MIN_DELAY = 1 / RATE
-    _last_call = 0.0
 
     def __init__(self):
+        """Initialize GUI image fetcher."""
+        super().__init__()
         self.gui_cache_dir = self.GUI_CACHE_DIR
         self.gui_cache_dir.mkdir(parents=True, exist_ok=True)
-        self.session = requests.Session()
-        self.session.headers.update(HEADERS)
-
-    @staticmethod
-    def _throttle():
-        """Rate limiting to be respectful to Scryfall."""
-        dt = GUIImageFetcher.MIN_DELAY - (perf_counter() - GUIImageFetcher._last_call)
-        if dt > 0:
-            sleep(dt)
 
     def _cache_path(self, scry_id: str) -> Path:
-        """Get cache path for a card's normal format image."""
+        """Get cache path for a card's JPEG image."""
         return self.gui_cache_dir / f"{scry_id}.jpg"
 
     def fetch_card_image(self, card_name: str) -> Image.Image | None:
@@ -156,7 +190,7 @@ class GUIImageFetcher:
                 params={"exact": card_name},
                 timeout=10
             )
-            GUIImageFetcher._last_call = perf_counter()
+            self._update_last_call()
             response.raise_for_status()
 
             card_json = response.json()
@@ -185,7 +219,7 @@ class GUIImageFetcher:
             # Download the image
             self._throttle()
             img_response = self.session.get(image_url, timeout=20)
-            GUIImageFetcher._last_call = perf_counter()
+            self._update_last_call()
             img_response.raise_for_status()
 
             img = Image.open(BytesIO(img_response.content)).convert("RGB")
