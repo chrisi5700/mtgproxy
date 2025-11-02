@@ -104,16 +104,22 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py deck.yaml proxies.pdf
-  python main.py -i deck.dec -o output.pdf --verbose
-  python main.py --input ramp.yaml --output-dir ./pdfs/
+  python main.py --gui                                  # Launch GUI
+  python main.py -i deck.yaml -o proxies.pdf           # CLI mode
+  python main.py -i deck.dec -o output.pdf --verbose   # CLI with verbose
+  python main.py --input ramp.yaml --output-dir ./pdfs/ # Custom output dir
         """.strip()
+    )
+
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="Launch the graphical user interface"
     )
 
     parser.add_argument(
         "-i", "--input",
         dest="deck_file",
-        required=True,
         metavar="FILE",
         help="Input deck file (YAML or decklist format)"
     )
@@ -185,9 +191,12 @@ def _print_error(message: str):
     print(f"\n✗ Error: {message}", file=sys.stderr)
 
 
-def main():
-    """Main entry point for mtgproxy."""
-    args = parse_arguments()
+def run_cli(args):
+    """Execute CLI mode: generate PDF from deck file."""
+    # Validate required argument for CLI
+    if not args.deck_file:
+        _print_error("CLI mode requires --input (deck file). Use --gui for GUI mode.")
+        sys.exit(1)
 
     _print_header()
 
@@ -268,6 +277,35 @@ def main():
         sys.exit(1)
 
     _print_success(f"PDF saved to {output_path}")
+
+
+def run_gui():
+    """Launch the graphical user interface."""
+    try:
+        from gui.main_window import MTGProxyGUI
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication(sys.argv)
+        gui = MTGProxyGUI()
+        gui.show()
+        sys.exit(app.exec())
+    except ImportError as e:
+        _print_error(f"GUI dependencies not installed: {e}")
+        print("Install PyQt6 to use GUI: pip install PyQt6 PyQt6-WebEngine rapidfuzz")
+        sys.exit(1)
+    except Exception as e:
+        _print_error(f"Failed to launch GUI: {e}")
+        sys.exit(1)
+
+
+def main():
+    """Main entry point for mtgproxy - routes to CLI or GUI."""
+    args = parse_arguments()
+
+    if args.gui:
+        run_gui()
+    else:
+        run_cli(args)
 
 
 if __name__ == "__main__":
